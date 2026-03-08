@@ -1,0 +1,620 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  firstName     String
+  lastName      String
+  password      String
+  avatar        String?
+  role          UserRole  @default(USER)
+  status        UserStatus @default(ACTIVE)
+  lastLoginAt   DateTime?
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  company       Company?
+  subscriptions Subscription[]
+  sessions      Session[]
+  agents        Agent[]
+  conversations Conversation[]
+  workflows     Workflow[]
+  campaigns     Campaign[]
+  analytics     Analytics[]
+  notifications Notification[]
+  apiKeys       ApiKey[]
+  teamMembers   TeamMember[]
+
+  @@map("users")
+}
+
+model Company {
+  id          String   @id @default(cuid())
+  name        String
+  domain      String?
+  logo        String?
+  industry    String?
+  size        String?
+  plan        Plan     @default(FREE)
+  status      CompanyStatus @default(ACTIVE)
+  settings    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  users       User[]
+  agents      Agent[]
+  workflows   Workflow[]
+  campaigns   Campaign[]
+  integrations Integration[]
+  billing     Billing?
+
+  @@map("companies")
+}
+
+model Agent {
+  id          String     @id @default(cuid())
+  name        String
+  description String?
+  avatar      String?
+  type        AgentType
+  status      AgentStatus @default(ACTIVE)
+  config      Json
+  capabilities String[]
+  companyId   String
+  createdBy   String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  company     Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  creator     User       @relation(fields: [createdBy], references: [id])
+  conversations Conversation[]
+  tasks       AgentTask[]
+  deployments AgentDeployment[]
+
+  @@map("agents")
+}
+
+model Conversation {
+  id          String           @id @default(cuid())
+  agentId     String
+  userId      String?
+  sessionId   String?
+  channel     ConversationChannel @default(CHAT)
+  status      ConversationStatus @default(ACTIVE)
+  metadata    Json?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  // Relations
+  agent       Agent            @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  user        User?            @relation(fields: [userId], references: [id])
+  messages    Message[]
+
+  @@map("conversations")
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  content        String
+  role           MessageRole
+  metadata       Json?
+  createdAt      DateTime     @default(now())
+
+  // Relations
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+model Workflow {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  trigger     WorkflowTrigger
+  status      WorkflowStatus @default(ACTIVE)
+  config      Json
+  companyId   String
+  createdBy   String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  creator     User         @relation(fields: [createdBy], references: [id])
+  executions  WorkflowExecution[]
+  nodes       WorkflowNode[]
+  edges       WorkflowEdge[]
+
+  @@map("workflows")
+}
+
+model WorkflowNode {
+  id         String      @id @default(cuid())
+  workflowId String
+  type       NodeType
+  position   Json
+  config     Json?
+  createdAt  DateTime    @default(now())
+
+  // Relations
+  workflow   Workflow    @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  edgesIn    WorkflowEdge[] @relation("NodeIn")
+  edgesOut   WorkflowEdge[] @relation("NodeOut")
+
+  @@map("workflow_nodes")
+}
+
+model WorkflowEdge {
+  id         String      @id @default(cuid())
+  workflowId String
+  sourceId   String
+  targetId   String
+  condition  Json?
+  createdAt  DateTime    @default(now())
+
+  // Relations
+  workflow   Workflow    @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  source     WorkflowNode @relation("NodeOut", fields: [sourceId], references: [id])
+  target     WorkflowNode @relation("NodeIn", fields: [targetId], references: [id])
+
+  @@map("workflow_edges")
+}
+
+model WorkflowExecution {
+  id          String           @id @default(cuid())
+  workflowId  String
+  status      ExecutionStatus  @default(PENDING)
+  input       Json
+  output      Json?
+  error       String?
+  startedAt   DateTime         @default(now())
+  completedAt DateTime?
+
+  // Relations
+  workflow    Workflow         @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@map("workflow_executions")
+}
+
+model Campaign {
+  id          String        @id @default(cuid())
+  name        String
+  type        CampaignType
+  status      CampaignStatus @default(DRAFT)
+  config      Json
+  companyId   String
+  createdBy   String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  // Relations
+  company     Company       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  creator     User         @relation(fields: [createdBy], references: [id])
+  executions  CampaignExecution[]
+  analytics   Analytics[]
+
+  @@map("campaigns")
+}
+
+model CampaignExecution {
+  id          String           @id @default(cuid())
+  campaignId  String
+  status      ExecutionStatus  @default(PENDING)
+  recipient   String
+  channel     String
+  content     Json
+  scheduledAt DateTime?
+  sentAt      DateTime?
+  deliveredAt DateTime?
+  openedAt    DateTime?
+  clickedAt   DateTime?
+
+  // Relations
+  campaign    Campaign         @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@map("campaign_executions")
+}
+
+model Lead {
+  id          String      @id @default(cuid())
+  email       String      @unique
+  firstName   String?
+  lastName    String?
+  phone       String?
+  company     String?
+  title       String?
+  source      String?
+  status      LeadStatus  @default(NEW)
+  score       Int         @default(0)
+  tags        String[]
+  metadata    Json?
+  companyId   String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@map("leads")
+}
+
+model Analytics {
+  id          String      @id @default(cuid())
+  type        AnalyticsType
+  metrics     Json
+  period      String
+  companyId   String?
+  userId      String?
+  agentId     String?
+  campaignId  String?
+  createdAt   DateTime    @default(now())
+
+  // Relations
+  company     Company?    @relation(fields: [companyId], references: [id])
+  user        User?       @relation(fields: [userId], references: [id])
+  campaign    Campaign?   @relation(fields: [campaignId], references: [id])
+
+  @@map("analytics")
+}
+
+model Subscription {
+  id          String           @id @default(cuid())
+  userId      String           @unique
+  plan        Plan
+  status      SubscriptionStatus @default(ACTIVE)
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean @default(false)
+  stripeSubscriptionId String?
+  stripeCustomerId     String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  // Relations
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model Billing {
+  id          String      @id @default(cuid())
+  companyId   String      @unique
+  address     Json?
+  taxId       String?
+  paymentMethod Json?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  company     Company     @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  invoices    Invoice[]
+
+  @@map("billing")
+}
+
+model Invoice {
+  id          String      @id @default(cuid())
+  number      String      @unique
+  amount      Float
+  currency    String      @default("USD")
+  status      InvoiceStatus @default(DRAFT)
+  dueDate     DateTime
+  paidAt      DateTime?
+  billingId   String
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  billing     Billing     @relation(fields: [billingId], references: [id], onDelete: Cascade)
+
+  @@map("invoices")
+}
+
+model Integration {
+  id          String          @id @default(cuid())
+  type        IntegrationType
+  name        String
+  config      Json
+  status      IntegrationStatus @default(ACTIVE)
+  companyId   String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  // Relations
+  company     Company         @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("integrations")
+}
+
+model ApiKey {
+  id          String      @id @default(cuid())
+  name        String
+  key         String      @unique
+  permissions String[]
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  userId      String
+  createdAt   DateTime    @default(now())
+
+  // Relations
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("api_keys")
+}
+
+model Session {
+  id          String      @id @default(cuid())
+  token       String      @unique
+  userId      String
+  expiresAt   DateTime
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime    @default(now())
+
+  // Relations
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  title       String
+  message     String
+  type        NotificationType
+  status      NotificationStatus @default(UNREAD)
+  metadata    Json?
+  userId      String
+  createdAt   DateTime         @default(now())
+
+  // Relations
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model TeamMember {
+  id          String      @id @default(cuid())
+  userId      String
+  companyId   String
+  role        TeamRole
+  permissions String[]
+  invitedBy   String
+  joinedAt    DateTime?
+  createdAt   DateTime    @default(now())
+
+  // Relations
+  user        User        @relation(fields: [userId], references: [id])
+  company     Company?    @relation(fields: [companyId], references: [id])
+
+  @@map("team_members")
+}
+
+model AgentTask {
+  id          String      @id @default(cuid())
+  agentId     String
+  type        String
+  status      String      @default(PENDING)
+  input       Json
+  output      Json?
+  error       String?
+  startedAt   DateTime    @default(now())
+  completedAt DateTime?
+
+  // Relations
+  agent       Agent       @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@map("agent_tasks")
+}
+
+model AgentDeployment {
+  id          String      @id @default(cuid())
+  agentId     String
+  type        DeploymentType
+  config      Json
+  status      DeploymentStatus @default(ACTIVE)
+  url         String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  // Relations
+  agent       Agent       @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@map("agent_deployments")
+}
+
+// Enums
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum CompanyStatus {
+  ACTIVE
+  INACTIVE
+  TRIAL
+}
+
+enum Plan {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum AgentType {
+  SALES
+  MARKETING
+  SUPPORT
+  GENERAL
+}
+
+enum AgentStatus {
+  ACTIVE
+  INACTIVE
+  TRAINING
+  ERROR
+}
+
+enum ConversationChannel {
+  CHAT
+  EMAIL
+  SMS
+  SOCIAL
+  VOICE
+}
+
+enum ConversationStatus {
+  ACTIVE
+  CLOSED
+  ARCHIVED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum WorkflowTrigger {
+  MANUAL
+  SCHEDULE
+  WEBHOOK
+  EVENT
+}
+
+enum WorkflowStatus {
+  ACTIVE
+  INACTIVE
+  DRAFT
+}
+
+enum NodeType {
+  TRIGGER
+  ACTION
+  CONDITION
+  DELAY
+  AI_TASK
+}
+
+enum ExecutionStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum CampaignType {
+  EMAIL
+  SMS
+  SOCIAL
+  PUSH
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  PAUSED
+  CANCELLED
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  CONVERTED
+  LOST
+}
+
+enum AnalyticsType {
+  AGENT_PERFORMANCE
+  CONVERSATION_METRICS
+  CAMPAIGN_RESULTS
+  USER_ACTIVITY
+  BUSINESS_INSIGHTS
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  TRIALING
+}
+
+enum InvoiceStatus {
+  DRAFT
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+enum IntegrationType {
+  CRM
+  EMAIL
+  SOCIAL
+  ANALYTICS
+  PAYMENT
+  CUSTOM
+}
+
+enum IntegrationStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+}
+
+enum NotificationType {
+  INFO
+  SUCCESS
+  WARNING
+  ERROR
+}
+
+enum NotificationStatus {
+  READ
+  UNREAD
+}
+
+enum TeamRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum DeploymentType {
+  WEBSITE_WIDGET
+  API
+  SLACK_BOT
+  DISCORD_BOT
+  TELEGRAM_BOT
+}
+
+enum DeploymentStatus {
+  ACTIVE
+  INACTIVE
+  ERROR
+}
